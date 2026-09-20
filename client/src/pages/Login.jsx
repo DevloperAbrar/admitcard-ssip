@@ -4,9 +4,9 @@ import { api } from '../api.js';
 import { cn, useAuth } from '../components/ui.jsx';
 import collegeBg from '../assets/college-bg.jpg';
 
-const APP_NAME   = import.meta.env.VITE_APP_NAME   || 'Shri Sahaj Institute of Pharmacy';
+const APP_NAME = import.meta.env.VITE_APP_NAME || 'Shri Sahaj Institute of Pharmacy';
 const SHORT_NAME = import.meta.env.VITE_SHORT_NAME || 'SSIP Khargone';
-const EMAIL_RE   = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const pad = (n) => String(n).padStart(2, '0');
 function countdown(sec) {
@@ -20,15 +20,15 @@ const inputCls =
 
 /* ── Student Panel ── */
 function StudentPanel({ onUser }) {
-  const [email, setEmail]         = useState('');
+  const [email, setEmail] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError]         = useState('');
-  const [lock, setLock]           = useState(null);
-  const [now, setNow]             = useState(Date.now());
+  const [error, setError] = useState('');
+  const [lock, setLock] = useState(null);
+  const [now, setNow] = useState(Date.now());
 
-  const norm      = email.trim().toLowerCase();
+  const norm = email.trim().toLowerCase();
   const remaining = lock?.email === norm ? Math.max(0, Math.ceil((lock.until - now) / 1000)) : 0;
-  const locked    = remaining > 0;
+  const locked = remaining > 0;
 
   useEffect(() => {
     if (!lock) return;
@@ -96,17 +96,17 @@ function StudentPanel({ onUser }) {
 
 /* ── Admin Panel ── */
 function AdminPanel({ onUser }) {
-  const [email, setEmail]           = useState('');
-  const [password, setPassword]     = useState('');
-  const [showPass, setShowPass]     = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPass, setShowPass] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError]           = useState('');
-  const [lock, setLock]             = useState(null);
-  const [now, setNow]               = useState(Date.now());
+  const [error, setError] = useState('');
+  const [lock, setLock] = useState(null);
+  const [now, setNow] = useState(Date.now());
 
-  const norm      = email.trim().toLowerCase();
+  const norm = email.trim().toLowerCase();
   const remaining = lock?.email === norm ? Math.max(0, Math.ceil((lock.until - now) / 1000)) : 0;
-  const locked    = remaining > 0;
+  const locked = remaining > 0;
 
   useEffect(() => {
     if (!lock) return;
@@ -203,8 +203,8 @@ function AdminPanel({ onUser }) {
 /* ── Main Login Page ── */
 export default function Login() {
   const { user, setUser } = useAuth();
-  const location          = useLocation();
-  const [tab, setTab]     = useState('student');
+  const location = useLocation();
+  const [tab, setTab] = useState('student');
 
   if (user?.role === 'admin') {
     const from = location.state?.from;
@@ -262,8 +262,8 @@ export default function Login() {
           <div className="flex gap-8">
             {[
               { num: '1000+', label: 'Students' },
-              { num: '7+',    label: 'Years' },
-              { num: '50+',   label: 'Faculty' },
+              { num: '7+', label: 'Years' },
+              { num: '50+', label: 'Faculty' },
             ].map(({ num, label }) => (
               <div key={label}>
                 <p className="text-2xl font-bold text-amber-400">{num}</p>
@@ -335,8 +335,33 @@ export default function Login() {
               </span>
             ))}
           </div>
+
+          {/* Developer credit */}
+          <div className="mt-5 text-center">
+            <p className="text-xs text-white/25 mb-1">Designed & Developed by</p>
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+
+              <a href="https://campussafar.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-semibold text-amber-400/70 hover:text-amber-400 transition-colors duration-200"
+              >
+                CampusSafar Technologies Pvt. Ltd.
+              </a>
+              <span className="text-white/20 text-xs">·</span>
+
+              <a href="https://i2s.campussafar.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="text-xs font-medium text-white/35 hover:text-white/60 transition-colors duration-200"
+              >
+                idea2software
+              </a>
+            </div>
+          </div>
+
         </div>
-      </div>
-    </div>
+      </div >
+    </div >
   );
 }
