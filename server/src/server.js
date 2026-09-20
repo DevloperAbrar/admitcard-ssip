@@ -17,6 +17,7 @@ import { startJobs } from './jobs.js';
 import authRoutes from './routes/auth.js';
 import masterRoutes, { seedDefaultCourse } from './routes/master.js';
 import studentRoutes from './routes/students.js';
+import paymentRoutes from './routes/payments.js';
 
 function ensureStorageDirs() {
   for (const dir of [config.paths.pdfCache, config.paths.csvTemp, config.paths.exports]) {
@@ -64,6 +65,7 @@ async function main() {
   app.use('/api/auth', authRoutes);
   app.use('/api/master', masterRoutes);
   app.use('/api/students', studentRoutes);
+  app.use('/api/payments', paymentRoutes);
 
   app.use(notFound);
   app.use(errorHandler);

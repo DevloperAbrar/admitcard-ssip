@@ -1,10 +1,12 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import cron from 'node-cron';
 import { parse } from 'csv-parse/sync';
 import { config } from './config.js';
-import { Course, Job, Student } from './models.js';
+import { Course, Job, Payment, Student } from './models.js';
 import { AppError, audit } from './security.js';
 import { totalSemesters, yearOf } from './routes/master.js';
+import { activatePaidPayment, getRazorpay } from './routes/payments.js';
 
 const MAX_ROWS = 5000;
 const MAX_ISSUES = 5000;
@@ -269,6 +271,65 @@ export async function runCsvImport(jobId) {
   }
 }
 
+/* ------------------------------ Payment reconciliation ------------------------------ */
+const RECONCILE_STALE_MS = 10 * 60 * 1000; // only look at orders older than this
+const RECONCILE_GIVE_UP_ATTEMPTS = 12; // flagged to admin after this many failed checks
+
+// Safety net for the rare case where the browser closes or the webhook is delayed/missed:
+// asks Razorpay directly whether a stuck order was actually paid, and activates it if so.
+export async function reconcilePayments() {
+  const cutoff = new Date(Date.now() - RECONCILE_STALE_MS);
+  const stuck = await Payment.find({
+    method: 'razorpay',
+    status: { $in: ['created', 'pending'] },
+    createdAt: { $lte: cutoff },
+  }).limit(100);
+
+  if (!stuck.length) return;
+
+  let razorpay;
+  try {
+    razorpay = getRazorpay();
+  } catch {
+    return; // gateway not configured yet; nothing to reconcile
+  }
+
+  for (const payment of stuck) {
+    let handled = false;
+    try {
+      const order = await razorpay.orders.fetch(payment.razorpayOrderId);
+      if (order.status === 'paid') {
+        const paymentsForOrder = await razorpay.orders.fetchPayments(payment.razorpayOrderId);
+        const captured =
+          paymentsForOrder.items.find((p) => p.status === 'captured') || paymentsForOrder.items[0];
+        if (captured) {
+          await activatePaidPayment({
+            payment,
+            razorpayPaymentId: captured.id,
+            gatewayMethod: captured.method,
+            actor: 'reconcile-cron',
+          });
+          handled = true;
+        }
+      } else if (order.status === 'attempted' && payment.status !== 'pending') {
+        payment.status = 'pending';
+      }
+    } catch (err) {
+      console.error('[jobs] reconcile check failed for', payment.razorpayOrderId, err.message);
+    }
+
+    if (handled) continue;
+
+    payment.reconcileAttempts = (payment.reconcileAttempts || 0) + 1;
+    payment.lastReconciledAt = new Date();
+    if (payment.reconcileAttempts >= RECONCILE_GIVE_UP_ATTEMPTS) {
+      payment.needsAttention = true;
+      payment.attentionReason = 'Payment could not be confirmed automatically after repeated checks.';
+    }
+    await payment.save();
+  }
+}
+
 async function cleanupTempFiles() {
   try {
     const dir = config.paths.csvTemp;
@@ -290,4 +351,8 @@ export async function startJobs() {
   );
   await cleanupTempFiles();
   setInterval(cleanupTempFiles, 30 * 60 * 1000).unref();
+
+  cron.schedule('*/5 * * * *', () => {
+    reconcilePayments().catch((err) => console.error('[jobs] reconcile run failed:', err));
+  });
 }
