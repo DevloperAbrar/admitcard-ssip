@@ -14,10 +14,12 @@ import {
   sanitizeMw,
 } from './security.js';
 import { startJobs } from './jobs.js';
+import { startPdfEngine, stopPdfEngine } from './pdf.js';
 import authRoutes from './routes/auth.js';
 import masterRoutes, { seedDefaultCourse } from './routes/master.js';
 import studentRoutes from './routes/students.js';
 import paymentRoutes from './routes/payments.js';
+import admitCardRoutes from './routes/admitCards.js';
 
 function ensureStorageDirs() {
   for (const dir of [config.paths.pdfCache, config.paths.csvTemp, config.paths.exports]) {
@@ -35,6 +37,7 @@ async function main() {
 
   await seedDefaultCourse();
   await startJobs();
+  await startPdfEngine();
 
   const app = express();
   app.disable('x-powered-by');
@@ -66,6 +69,7 @@ async function main() {
   app.use('/api/master', masterRoutes);
   app.use('/api/students', studentRoutes);
   app.use('/api/payments', paymentRoutes);
+  app.use('/api/admit-cards', admitCardRoutes);
 
   app.use(notFound);
   app.use(errorHandler);
@@ -82,6 +86,7 @@ async function main() {
   const shutdown = (signal) => {
     console.log(`[server] ${signal} received, shutting down...`);
     server.close(async () => {
+      await stopPdfEngine();
       await mongoose.connection.close();
       process.exit(0);
     });

@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
+import { GoogleLogin } from '@react-oauth/google';
 import { api } from '../api.js';
-import { Button, Field, Input, useAuth } from '../components/ui.jsx';
+import { Button, Field, Input, cn, useAuth } from '../components/ui.jsx';
 
 const APP_NAME = import.meta.env.VITE_APP_NAME || 'College Portal';
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const pad = (n) => String(n).padStart(2, '0');
@@ -14,10 +16,47 @@ function formatCountdown(totalSec) {
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
 }
 
+function StudentLogin({ onUser }) {
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  if (!GOOGLE_CLIENT_ID) {
+    return <p className="text-sm text-red-600">Google login is not configured. Set VITE_GOOGLE_CLIENT_ID in client/.env.</p>;
+  }
+
+  const onSuccess = async (response) => {
+    if (!response?.credential) return setError('Google sign-in failed. Please try again.');
+    setBusy(true);
+    setError('');
+    try {
+      const res = await api.auth.googleLogin(response.credential);
+      onUser(res.user);
+    } catch (err) {
+      setError(err.message);
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      {error && (
+        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+          {error}
+        </div>
+      )}
+      <p className="text-center text-sm text-slate-600">Sign in with the Google account registered with your college.</p>
+      <div className={cn('flex justify-center', busy && 'pointer-events-none opacity-60')}>
+        <GoogleLogin onSuccess={onSuccess} onError={() => setError('Google sign-in was cancelled or failed.')} />
+      </div>
+    </div>
+  );
+}
+
 export default function Login() {
   const { user, setUser } = useAuth();
   const location = useLocation();
 
+  const [tab, setTab] = useState('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [otp, setOtp] = useState('');
@@ -98,90 +137,113 @@ export default function Login() {
     const from = location.state?.from;
     return <Navigate to={typeof from === 'string' && from.startsWith('/admin') ? from : '/admin'} replace />;
   }
+  if (user?.role === 'student') return <Navigate to="/student" replace />;
 
   return (
     <div className="flex min-h-full items-center justify-center bg-slate-50 px-4 py-10">
       <div className="w-full max-w-sm">
         <div className="mb-6 text-center">
           <h1 className="text-2xl font-semibold text-slate-900">{APP_NAME}</h1>
-          <p className="mt-1 text-sm text-slate-500">Admin login</p>
+          <p className="mt-1 text-sm text-slate-500">Sign in to continue</p>
         </div>
 
-        <form onSubmit={onSubmit} noValidate className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
-          {locked && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-center" role="alert">
-              <p className="text-sm text-red-800">Too many failed attempts. Try again in</p>
-              <p className="mt-1 font-mono text-2xl font-semibold text-red-700">{formatCountdown(remainingSec)}</p>
-            </div>
-          )}
+        <div className="mb-3 grid grid-cols-2 gap-1 rounded-lg bg-slate-200 p-1 text-sm font-medium">
+          {[
+            ['student', 'Student'],
+            ['admin', 'Admin'],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={cn('rounded-md py-1.5 transition', tab === key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600')}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
 
-          {!locked && error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
-              {error}
-            </div>
-          )}
+        {tab === 'student' ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            <StudentLogin onUser={setUser} />
+          </div>
+        ) : (
+          <form onSubmit={onSubmit} noValidate className="space-y-4 rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+            {locked && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-center" role="alert">
+                <p className="text-sm text-red-800">Too many failed attempts. Try again in</p>
+                <p className="mt-1 font-mono text-2xl font-semibold text-red-700">{formatCountdown(remainingSec)}</p>
+              </div>
+            )}
 
-          <Field label="Email" htmlFor="email">
-            <Input
-              id="email"
-              type="email"
-              autoComplete="username"
-              value={email}
-              onChange={(e) => {
-                setEmail(e.target.value);
-                setOtpRequired(false);
-                setOtp('');
-              }}
-              onBlur={checkLock}
-              disabled={submitting}
-              placeholder="admin@example.com"
-            />
-          </Field>
+            {!locked && error && (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800" role="alert">
+                {error}
+              </div>
+            )}
 
-          <Field label="Password" htmlFor="password">
-            <div className="relative">
+            <Field label="Email" htmlFor="email">
               <Input
-                id="password"
-                type={showPassword ? 'text' : 'password'}
-                autoComplete="current-password"
-                value={password}
+                id="email"
+                type="email"
+                autoComplete="username"
+                value={email}
                 onChange={(e) => {
-                  setPassword(e.target.value);
+                  setEmail(e.target.value);
                   setOtpRequired(false);
                   setOtp('');
                 }}
+                onBlur={checkLock}
                 disabled={submitting}
-                className="pr-16"
-              />
-              <button
-                type="button"
-                onClick={() => setShowPassword((v) => !v)}
-                className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-slate-500 hover:text-slate-700"
-              >
-                {showPassword ? 'Hide' : 'Show'}
-              </button>
-            </div>
-          </Field>
-
-          {otpRequired && (
-            <Field label="Authentication code" htmlFor="otp" hint="Open Google Authenticator and enter the 6-digit code.">
-              <Input
-                id="otp"
-                inputMode="numeric"
-                autoComplete="one-time-code"
-                maxLength={6}
-                value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                disabled={submitting}
-                autoFocus
+                placeholder="admin@example.com"
               />
             </Field>
-          )}
 
-          <Button type="submit" className="w-full" loading={submitting} disabled={locked}>
-            {otpRequired ? 'Verify and log in' : 'Log in'}
-          </Button>
-        </form>
+            <Field label="Password" htmlFor="password">
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="current-password"
+                  value={password}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    setOtpRequired(false);
+                    setOtp('');
+                  }}
+                  disabled={submitting}
+                  className="pr-16"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute inset-y-0 right-0 px-3 text-xs font-medium text-slate-500 hover:text-slate-700"
+                >
+                  {showPassword ? 'Hide' : 'Show'}
+                </button>
+              </div>
+            </Field>
+
+            {otpRequired && (
+              <Field label="Authentication code" htmlFor="otp" hint="Open Google Authenticator and enter the 6-digit code.">
+                <Input
+                  id="otp"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={otp}
+                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                  disabled={submitting}
+                  autoFocus
+                />
+              </Field>
+            )}
+
+            <Button type="submit" className="w-full" loading={submitting} disabled={locked}>
+              {otpRequired ? 'Verify and log in' : 'Log in'}
+            </Button>
+          </form>
+        )}
       </div>
     </div>
   );

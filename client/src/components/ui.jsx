@@ -340,3 +340,245 @@ import {
   
   export const AdminLayout = () => <Shell subtitle="Admin Panel" nav={ADMIN_NAV} />;
   export const StudentLayout = () => <Shell subtitle="Student Portal" nav={STUDENT_NAV} />;
+
+  /* ============================== Shared helpers (added) ============================== */
+export const formatINR = (n) =>
+  n === null || n === undefined || n === ''
+    ? '—'
+    : new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(n);
+
+export const formatDate = (value) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+};
+
+export const formatDateTime = (value) => {
+  if (!value) return '—';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime())
+    ? '—'
+    : d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
+// Academic session that contains today, e.g. "2025-26" (new session starts in June).
+export function currentSession() {
+  const now = new Date();
+  const start = now.getMonth() >= 5 ? now.getFullYear() : now.getFullYear() - 1;
+  return `${start}-${String((start + 1) % 100).padStart(2, '0')}`;
+}
+
+export const SESSION_RE = /^\d{4}-\d{2}$/;
+
+export function saveBlob(result, fallbackName) {
+  const url = URL.createObjectURL(result.blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = result.filename || fallbackName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+export function useDebounce(value, delay = 400) {
+  const [debounced, setDebounced] = useState(value);
+  useEffect(() => {
+    const id = setTimeout(() => setDebounced(value), delay);
+    return () => clearTimeout(id);
+  }, [value, delay]);
+  return debounced;
+}
+
+const STATUS_COLORS = {
+  paid: 'green',
+  waived: 'blue',
+  unpaid: 'red',
+  pending: 'yellow',
+  failed: 'red',
+  refunded: 'gray',
+  active: 'green',
+  inactive: 'gray',
+  draft: 'yellow',
+  published: 'green',
+  ready: 'green',
+  blocked: 'red',
+  issued: 'green',
+  revoked: 'red',
+  completed: 'green',
+  running: 'blue',
+  queued: 'yellow',
+};
+
+export function StatusBadge({ status }) {
+  const label = String(status || '—');
+  return <Badge color={STATUS_COLORS[status] || 'gray'}>{label.charAt(0).toUpperCase() + label.slice(1)}</Badge>;
+}
+
+export function Pagination({ page, pages, total, onChange }) {
+  if (!total) return null;
+  return (
+    <div className="mt-4 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+      <span>
+        Page {page} of {pages} &middot; {total} record{total === 1 ? '' : 's'}
+      </span>
+      <div className="flex gap-2">
+        <Button variant="secondary" disabled={page <= 1} onClick={() => onChange(page - 1)}>
+          Previous
+        </Button>
+        <Button variant="secondary" disabled={page >= pages} onClick={() => onChange(page + 1)}>
+          Next
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+export function DataTable({ columns, rows, rowKey = 'id', loading = false, empty = 'No records found.' }) {
+  return (
+    <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+      <table className="min-w-full divide-y divide-slate-200 text-sm">
+        <thead className="bg-slate-50">
+          <tr>
+            {columns.map((c) => (
+              <th
+                key={c.key}
+                className={cn('whitespace-nowrap px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-slate-500', c.className)}
+              >
+                {c.header}
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody className="divide-y divide-slate-100">
+          {loading ? (
+            <tr>
+              <td colSpan={columns.length} className="px-4 py-10 text-center text-indigo-600">
+                <Spinner className="mx-auto h-6 w-6" />
+              </td>
+            </tr>
+          ) : rows.length === 0 ? (
+            <tr>
+              <td colSpan={columns.length} className="px-4 py-10 text-center text-slate-500">
+                {empty}
+              </td>
+            </tr>
+          ) : (
+            rows.map((row, index) => (
+              <tr key={row[rowKey] ?? index} className="hover:bg-slate-50">
+                {columns.map((c) => (
+                  <td key={c.key} className={cn('px-4 py-3 align-middle text-slate-700', c.tdClassName)}>
+                    {c.render ? c.render(row) : row[c.key]}
+                  </td>
+                ))}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function ConfirmModal({ open, title, message, confirmLabel = 'Confirm', danger = false, loading = false, onConfirm, onClose }) {
+  return (
+    <Modal
+      open={open}
+      onClose={loading ? undefined : onClose}
+      title={title}
+      size="sm"
+      footer={
+        <>
+          <Button variant="secondary" onClick={onClose} disabled={loading}>
+            Cancel
+          </Button>
+          <Button variant={danger ? 'danger' : 'primary'} onClick={onConfirm} loading={loading}>
+            {confirmLabel}
+          </Button>
+        </>
+      }
+    >
+      <p className="text-sm text-slate-700">{message}</p>
+    </Modal>
+  );
+}
+
+export function PdfModal({ title, url, loading, onClose, onDownload }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === 'Escape' && onClose?.();
+    document.addEventListener('keydown', onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-900/60 p-3">
+      <div className="flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2">
+          <h2 className="text-sm font-semibold text-slate-900">{title}</h2>
+          <div className="flex gap-2">
+            {onDownload && url && (
+              <Button variant="secondary" onClick={onDownload}>
+                Download
+              </Button>
+            )}
+            <Button variant="secondary" onClick={onClose}>
+              Close
+            </Button>
+          </div>
+        </div>
+        <div className="flex-1 bg-slate-100">
+          {loading || !url ? (
+            <div className="flex h-full items-center justify-center text-indigo-600">
+              <Spinner className="h-8 w-8" />
+            </div>
+          ) : (
+            <iframe title={title} src={url} className="h-full w-full border-0" />
+          )}
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// open(loaderFn, title): loaderFn returns { blob, filename }. Shows the PDF in a modal.
+export function usePdfViewer() {
+  const toast = useToast();
+  const [state, setState] = useState(null);
+  const urlRef = useRef(null);
+
+  const close = useCallback(() => {
+    if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+    urlRef.current = null;
+    setState(null);
+  }, []);
+
+  const open = useCallback(
+    async (loader, title = 'Preview', onDownload) => {
+      if (urlRef.current) URL.revokeObjectURL(urlRef.current);
+      urlRef.current = null;
+      setState({ title, url: null, loading: true, onDownload });
+      try {
+        const result = await loader();
+        urlRef.current = URL.createObjectURL(result.blob);
+        setState({ title, url: urlRef.current, loading: false, onDownload });
+      } catch (err) {
+        setState(null);
+        toast.error(err.message || 'Could not load the document.');
+      }
+    },
+    [toast]
+  );
+
+  useEffect(() => () => urlRef.current && URL.revokeObjectURL(urlRef.current), []);
+
+  const modal = state ? (
+    <PdfModal title={state.title} url={state.url} loading={state.loading} onClose={close} onDownload={state.onDownload} />
+  ) : null;
+  return { open, close, modal };
+}

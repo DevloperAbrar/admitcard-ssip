@@ -79,6 +79,9 @@ export const config = {
   college: {
     name: (env.COLLEGE_NAME || 'Your College Name').trim(),
     code: (env.COLLEGE_CODE || 'COL').trim().toUpperCase(),
+    accentColor: /^#[0-9a-f]{6}$/i.test((env.COLLEGE_COLOR || '').trim()) ? env.COLLEGE_COLOR.trim() : '#1e3a8a',
+    principalName: (env.PRINCIPAL_NAME || '').trim(),
+    inchargeName: (env.EXAM_INCHARGE_NAME || '').trim(),
     courseTitles: {
       'B.PHARM': 'BACHELOR OF PHARMACY (B.PHARM.)',
     },

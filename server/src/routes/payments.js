@@ -9,11 +9,13 @@ import {
   AppError,
   asyncHandler,
   audit,
+  authenticate,
   downloadLimiter,
   requireAdmin,
   requireStudent,
   validate,
 } from '../security.js';
+import { pregenerateForStudentLater, renderReceiptPdf } from '../pdf.js';
 
 const router = Router();
 
@@ -91,6 +93,8 @@ export async function activatePaidPayment({ payment, razorpayPaymentId, gatewayM
     entityId: payment._id,
     details: { amount: payment.amount, receiptNo: payment.receiptNo, session: payment.session, semester: payment.semester },
   });
+
+  pregenerateForStudentLater(payment.student);
 
   return payment;
 }
@@ -754,6 +758,75 @@ router.post(
     }
 
     res.json({ success: true });
+  })
+);
+
+/* ------------------------------ Student: plan + access status for the Pay page ------------------------------ */
+router.get(
+  '/my-plan',
+  requireStudent,
+  asyncHandler(async (req, res) => {
+    const student = await Student.findById(req.auth.id).populate('course', 'name shortName').lean();
+    if (!student || student.isDeleted) throw new AppError(401, 'Account not found.', 'UNAUTHENTICATED');
+    if (student.status !== 'active') {
+      throw new AppError(403, 'Your account has been disabled. Please contact admin.', 'ACCOUNT_DISABLED');
+    }
+
+    const [plan, subscription] = await Promise.all([
+      Plan.findOne({ course: student.course._id, semester: student.semester, status: 'active' })
+        .sort({ session: -1 })
+        .lean(),
+      Subscription.findOne({ student: student._id, semester: student.semester, status: { $in: ['paid', 'waived'] } })
+        .sort({ session: -1 })
+        .lean(),
+    ]);
+
+    let latestPayment = null;
+    if (plan && !subscription) {
+      const p = await Payment.findOne({ student: student._id, plan: plan._id }).sort({ createdAt: -1 }).lean();
+      if (p && ['pending', 'failed'].includes(p.status)) {
+        latestPayment = { status: p.status, failureReason: p.status === 'failed' ? p.failureReason || null : null };
+      }
+    }
+
+    res.json({
+      success: true,
+      plan: plan ? { id: String(plan._id), name: plan.name, amount: plan.amount, session: plan.session, semester: plan.semester } : null,
+      subscription: subscription
+        ? { status: subscription.status, session: subscription.session, semester: subscription.semester }
+        : null,
+      latestPayment,
+    });
+  })
+);
+
+/* ------------------------------ Receipt PDF (student: own only, admin: any) ------------------------------ */
+router.get(
+  '/:id/receipt',
+  authenticate,
+  downloadLimiter,
+  asyncHandler(async (req, res) => {
+    const payment = await Payment.findById(req.params.id).select('student status receiptNo').lean();
+    if (!payment) throw new AppError(404, 'Receipt not found.', 'NOT_FOUND');
+
+    if (req.auth.role === 'student') {
+      if (String(payment.student) !== String(req.auth.id)) throw new AppError(404, 'Receipt not found.', 'NOT_FOUND');
+    } else if (req.auth.role !== 'admin' || req.auth.email !== config.admin.email) {
+      throw new AppError(403, 'You do not have permission to do this.', 'FORBIDDEN');
+    }
+    if (!payment.receiptNo || !['paid', 'refunded'].includes(payment.status)) {
+      throw new AppError(409, 'A receipt is available only for completed payments.', 'INVALID_STATE');
+    }
+
+    const pdf = await renderReceiptPdf(payment._id);
+    const disposition = req.query.mode === 'preview' ? 'inline' : 'attachment';
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': `${disposition}; filename="receipt-${payment.receiptNo}.pdf"`,
+      'Content-Length': pdf.length,
+      'Cache-Control': 'private, no-store',
+    });
+    res.end(pdf);
   })
 );
 
