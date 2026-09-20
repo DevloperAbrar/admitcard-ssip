@@ -102,6 +102,7 @@ export const api = {
   auth: {
     adminLogin: (body) => request('/auth/admin/login', { method: 'POST', body, skipRefresh: true }),
     lockStatus: (email) => request('/auth/admin/lock-status', { params: { email }, skipRefresh: true }),
+    studentLogin: (email) => request('/auth/student/login', { method: 'POST', body: { email }, skipRefresh: true }),
     googleLogin: (credential) => request('/auth/student/google', { method: 'POST', body: { credential }, skipRefresh: true }),
     me: () => request('/auth/me'),
     logout: () => request('/auth/logout', { method: 'POST', body: {}, skipRefresh: true }),

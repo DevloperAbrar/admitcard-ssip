@@ -1,7 +1,6 @@
 import crypto from 'node:crypto';
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
-import otplib from 'otplib';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import { config } from '../config.js';
@@ -23,9 +22,6 @@ import {
   validate,
 } from '../security.js';
 
-const { authenticator } = otplib;
-authenticator.options = { window: 1 };
-
 const router = Router();
 const googleClient = config.google.clientId ? new OAuth2Client(config.google.clientId) : null;
 
@@ -34,11 +30,6 @@ const emailSchema = z.string().trim().toLowerCase().email().max(200);
 const loginSchema = z.object({
   email: emailSchema,
   password: z.string().min(1).max(200),
-  otp: z
-    .string()
-    .trim()
-    .regex(/^\d{6}$/, 'Enter the 6-digit code.')
-    .optional(),
 });
 
 const lockStatusSchema = z.object({ email: emailSchema });
@@ -84,7 +75,7 @@ router.post(
   loginLimiter,
   validate({ body: loginSchema }),
   asyncHandler(async (req, res) => {
-    const { email, password, otp } = req.body;
+    const { email, password } = req.body;
     const key = loginLockKey(req.ip, email);
 
     const lock = await getLockStatus(key);
@@ -111,13 +102,6 @@ router.post(
     const passwordOk = await bcrypt.compare(password, config.admin.passwordHash);
     if (!emailOk || !passwordOk) return fail('Invalid email or password.');
 
-    if (config.admin.twoFaSecret) {
-      if (!otp) return res.json({ success: true, otpRequired: true });
-      if (!authenticator.check(otp, config.admin.twoFaSecret)) {
-        return fail('Invalid authentication code.');
-      }
-    }
-
     await clearLoginFailures(key);
     await issueSession(req, res, { sub: 'admin', role: 'admin', email: config.admin.email });
     await audit(req, 'LOGIN', { actor: config.admin.email, actorType: 'admin' });
@@ -132,6 +116,47 @@ router.get(
   asyncHandler(async (req, res) => {
     const lock = await getLockStatus(loginLockKey(req.ip, req.query.email));
     res.json({ success: true, locked: lock.locked, retryAfterSec: lock.retryAfterSec || 0 });
+  })
+);
+
+/* ------------------------------ Student email login ------------------------------ */
+const studentLoginSchema = z.object({
+  email: emailSchema,
+});
+
+router.post(
+  '/student/login',
+  loginLimiter,
+  validate({ body: studentLoginSchema }),
+  asyncHandler(async (req, res) => {
+    const { email } = req.body;
+    const key = loginLockKey(req.ip, email);
+
+    const lock = await getLockStatus(key);
+    if (lock.locked) return respondLocked(res, lock);
+
+    const student = await Student.findOne({ email, isDeleted: false });
+    if (!student) {
+      const result = await registerFailedLogin(key);
+      await audit(req, 'STUDENT_LOGIN_UNREGISTERED', { actor: email, actorType: 'student' });
+      if (result.locked) return respondLocked(res, result);
+      return res.status(401).json({
+        success: false,
+        code: 'INVALID_CREDENTIALS',
+        message: 'No account found with this email. Contact the admin.',
+        attemptsLeft: result.attemptsLeft,
+      });
+    }
+    if (student.status !== 'active') {
+      return res.status(403).json({ success: false, code: 'ACCOUNT_DISABLED', message: 'Your account is disabled. Contact admin.' });
+    }
+
+    await clearLoginFailures(key);
+    await Student.updateOne({ _id: student._id }, { $set: { lastLoginAt: new Date() } });
+    await issueSession(req, res, { sub: String(student._id), role: 'student', email });
+    await audit(req, 'STUDENT_LOGIN', { actor: email, actorType: 'student', entity: 'Student', entityId: student._id });
+
+    res.json({ success: true, user: await studentUser(student._id) });
   })
 );
 

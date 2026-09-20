@@ -59,8 +59,6 @@ export default function Login() {
   const [tab, setTab] = useState('student');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [otp, setOtp] = useState('');
-  const [otpRequired, setOtpRequired] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -104,17 +102,10 @@ export default function Login() {
 
     if (!EMAIL_RE.test(normEmail)) return setError('Enter a valid email address.');
     if (!password) return setError('Enter your password.');
-    if (otpRequired && !/^\d{6}$/.test(otp.trim())) return setError('Enter the 6-digit authentication code.');
 
     setSubmitting(true);
     try {
-      const body = { email: normEmail, password };
-      if (otpRequired) body.otp = otp.trim();
-      const res = await api.auth.adminLogin(body);
-      if (res.otpRequired) {
-        setOtpRequired(true);
-        return;
-      }
+      const res = await api.auth.adminLogin({ email: normEmail, password });
       setUser(res.user);
     } catch (err) {
       if (err.code === 'LOGIN_LOCKED') {
@@ -124,7 +115,6 @@ export default function Login() {
         setError(
           typeof left === 'number' ? `${err.message} ${left} attempt(s) left before this login is locked.` : err.message
         );
-        if (otpRequired) setOtp('');
       } else {
         setError(err.message);
       }
@@ -190,8 +180,6 @@ export default function Login() {
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
-                  setOtpRequired(false);
-                  setOtp('');
                 }}
                 onBlur={checkLock}
                 disabled={submitting}
@@ -208,8 +196,6 @@ export default function Login() {
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
-                    setOtpRequired(false);
-                    setOtp('');
                   }}
                   disabled={submitting}
                   className="pr-16"
@@ -224,23 +210,8 @@ export default function Login() {
               </div>
             </Field>
 
-            {otpRequired && (
-              <Field label="Authentication code" htmlFor="otp" hint="Open Google Authenticator and enter the 6-digit code.">
-                <Input
-                  id="otp"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  maxLength={6}
-                  value={otp}
-                  onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
-                  disabled={submitting}
-                  autoFocus
-                />
-              </Field>
-            )}
-
             <Button type="submit" className="w-full" loading={submitting} disabled={locked}>
-              {otpRequired ? 'Verify and log in' : 'Log in'}
+              Log in
             </Button>
           </form>
         )}
